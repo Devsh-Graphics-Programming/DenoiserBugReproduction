@@ -3,21 +3,28 @@ set(EXECUTABLE_NAME "denoiserBugReproductionApp")
 DBR_adjust_flags() # macro defined in root CMakeLists
 DBR_adjust_definitions() # macro defined in root CMakeLists
 
-set(DBR_SOURCES
-	"dbr/Application.cpp"
+set(DBR_EXTERNAL_SOURCES
+	"glad/glad.cpp"
 )
 
-set(INC_HEADERS
-	"inc/Application.h"
-	"inc/CheckMacros.h"
-	"inc/MyAssert.h"
-	"inc/Logger.h"
+set(DBR_EXTERNAL_HEADERS
+	"glad/glad.h"
+	"glfw/glfw3.h"
+	"glfw/glfw3native.h"
+)
+
+set(DBR_SOURCES
+	
+)
+
+set(DBR_HEADERS
+	
 )
 
 set(DBR_GLOBAL_SOURCES
-	"dbr/main.cpp"
+	"main.cpp"
 	"${DBR_SOURCES}"
-	"${INC_HEADERS}"
+	"${DBR_HEADERS}"
 )
 
 add_executable(${EXECUTABLE_NAME} ${DBR_GLOBAL_SOURCES})
@@ -25,8 +32,11 @@ add_executable(${EXECUTABLE_NAME} ${DBR_GLOBAL_SOURCES})
 message("CUDA_CUDA_LIBRARY = " "${CUDA_CUDA_LIBRARY}")
 target_link_libraries(${EXECUTABLE_NAME} ${CUDA_CUDA_LIBRARY})
 
+source_group( "externalSources" FILES ${DBR_EXTERNAL_SOURCES} )
+source_group( "externalHeaders" FILES ${DBR_EXTERNAL_HEADERS} )
+
 source_group( "sources" FILES ${DBR_SOURCES} )
-source_group( "headers" FILES ${INC_HEADERS} )
+source_group( "headers" FILES ${DBR_HEADERS} )
 
 set_property(TARGET ${EXECUTABLE_NAME} PROPERTY
              MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")

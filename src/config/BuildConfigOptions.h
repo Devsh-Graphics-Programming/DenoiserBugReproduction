@@ -1,0 +1,6 @@
+#ifndef __DBR_BUILD_CONFIG_OPTIONS_H_INCLUDED__
+#define __DBR_BUILD_CONFIG_OPTIONS_H_INCLUDED__
+
+#define DBR_ROOT "D:/denoiserBugReproduction"
+
+#endif // __DBR_BUILD_CONFIG_OPTIONS_H_INCLUDED__

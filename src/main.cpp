@@ -1,13 +1,41 @@
+#include "config/BuildConfigOptions.h"
+#include "nvidia/CheckMacros.h"
+
 #include <iostream>
 #include <vector>
 #include <string>
+#include <string_view>
 #include <filesystem>
+#include <array>
 #include <map>
 #include <cassert>
 
 #include <cuda.h>
 #include <optix.h>
 #include <optix_stubs.h>
+#include <optix_function_table_definition.h>
+
+#include "gli/gli.hpp"
+
+void CU_CHECK(const CUresult result)
+{
+	if (result != CUDA_SUCCESS)
+	{
+		const char* name;
+		cuGetErrorName(result, &name);
+		std::cerr << "ERROR: Failed with " << name << " (" << result << ")\n";
+		MY_ASSERT(!"CU_CHECK fatal");
+	}
+}
+
+void OPTIX_CHECK(const OptixResult result)
+{
+	if (result != OPTIX_SUCCESS)
+	{
+		std::cerr << "ERROR: Failed with (" << result << ")\n";
+		MY_ASSERT(!"OPTIX_CHECK fatal");
+	}
+}
 
 constexpr uint32_t overlap = 64;
 //constexpr uint32_t tileWidth = 1920/2, tileHeight = 1080/2;
@@ -22,25 +50,56 @@ void DBROptixDefaultCallback(unsigned int level, const char* tag, const char* me
 	printf("OptiX Context:%d [%s]: %s\n", contextID, tag, message);
 }
 
+
 int main()
 {
+	CU_CHECK(cuInit(0));
+	OPTIX_CHECK(optixInit());
+
 	bool status = true;
 
-	uint32_t maxResolution[2] = { 0,0 }; // TODO load EXRs images
+	constexpr std::array<std::string_view, 3> hardcodedInputs =
+	{
+		"spp_benchmark_4k_512_reference_optix_input_albedo.dds",
+		"spp_benchmark_4k_512_reference_optix_input_color.dds",
+		"spp_benchmark_4k_512_reference_optix_input_normal.dds"
+	};
 
-	/*
-		...
-	*/
+	uint32_t maxResolution[2] = { 0,0 };
+	std::array<gli::texture, hardcodedInputs.size()> inputKindTextures;
+	gli::texture outputTexture;
+	{
+		uint8_t offset = {};
+		for (auto& hardcodedInput : hardcodedInputs)
+		{
+			const std::string inputFile = DBR_ROOT + std::string("/data/") + hardcodedInput.data();
+
+			inputKindTextures[offset] = gli::load_dds(inputFile);
+			status = !inputKindTextures[offset].empty();
+			assert(status); // Input hasn't been loaded!
+
+			auto extent = inputKindTextures[offset].extent(0);
+
+			maxResolution[0] = std::max<uint32_t>(extent.x, maxResolution[0]);
+			maxResolution[1] = std::max<uint32_t>(extent.y, maxResolution[1]);
+
+			if (offset == 0u)
+				outputTexture = inputKindTextures[offset]; // For copying header data
+
+			++offset;
+		}
+	}
+
 	CUdevice device;
-	cuCtxGetDevice(&device);
+	CU_CHECK(cuCtxGetDevice(&device)); // it won't work
 
 	// create context
 	CUcontext context;
-	cuCtxCreate_v2(&context,CU_CTX_SCHED_YIELD | CU_CTX_MAP_HOST | CU_CTX_LMEM_RESIZE_TO_MAX,device);
+	CU_CHECK(cuCtxCreate_v2(&context,CU_CTX_SCHED_YIELD | CU_CTX_MAP_HOST | CU_CTX_LMEM_RESIZE_TO_MAX,device));
 	{
 		uint32_t version = 0u;
 
-		cuCtxGetApiVersion(context, &version);
+		CU_CHECK(cuCtxGetApiVersion(context, &version));
 
 		if (version < 3020)
 		{
@@ -49,25 +108,19 @@ int main()
 			return 1;
 		}
 
-		cuCtxSetCacheConfig(CU_FUNC_CACHE_PREFER_L1);
+		CU_CHECK(cuCtxSetCacheConfig(CU_FUNC_CACHE_PREFER_L1));
 	}
 
-	optixInit();
-
 	CUstream stream;
-	cuStreamCreate(&stream,CU_STREAM_NON_BLOCKING); // TODO: check/wrap all CUDA calls in check for CUDA_SUCCESS
+	CU_CHECK(cuStreamCreate(&stream,CU_STREAM_NON_BLOCKING));
 
 	/*
 		Init Optix Context
 	*/
 
 	OptixDeviceContext optixContext;
-	if (optixDeviceContextCreate(context, {}, &optixContext) != OPTIX_SUCCESS)
-		status = false;
-
-	assert(status);
-
-	optixDeviceContextSetLogCallback(optixContext, DBROptixDefaultCallback, reinterpret_cast<void*>(context), 3);
+	OPTIX_CHECK(optixDeviceContextCreate(context, {}, &optixContext));
+	OPTIX_CHECK(optixDeviceContextSetLogCallback(optixContext, DBROptixDefaultCallback, reinterpret_cast<void*>(context), 3));
 
 	/*
 		Creating Denoisers
@@ -82,10 +135,12 @@ int main()
 			return nullptr;
 
 		OptixDenoiser denoiser = nullptr;
-		if (optixDenoiserCreate(optixContext, options, &denoiser) != OPTIX_SUCCESS || !denoiser)
+		OPTIX_CHECK(optixDenoiserCreate(optixContext, options, &denoiser));
+
+		if (!denoiser)
 			return nullptr;
 
-		if (optixDenoiserSetModel(denoiser, model, modelData, modelDataSizeInBytes) != OPTIX_SUCCESS)
+		if(optixDenoiserSetModel(denoiser, model, modelData, modelDataSizeInBytes) != OPTIX_SUCCESS)
 			return nullptr;
 
 		return denoiser;
@@ -96,7 +151,7 @@ int main()
 	OptixDenoiser denoiser = createDenoiser(&opts);
 	if (!denoiser)
 		status = false;
-	assert(status); // "Could not create Optix Color-Albedo-Normal Denoiser!
+	assert(status); // Could not create Optix Color-Albedo-Normal Denoiser!
 
 	/*
 		Compute memory resources for denoiser
@@ -108,9 +163,7 @@ int main()
 	{
 		OptixDenoiserSizes denoiserMemReqs;
 
-		if (optixDenoiserComputeMemoryResources(denoiser, outputDimensions[0], outputDimensions[1], &denoiserMemReqs) != OPTIX_SUCCESS)
-			status = false;
-		assert(status); // Failed to compute Memory Requirements!
+		OPTIX_CHECK(optixDenoiserComputeMemoryResources(denoiser, outputDimensions[0], outputDimensions[1], &denoiserMemReqs));
 
 		denoiserStateBufferSize = denoiserMemReqs.stateSizeInBytes;
 		scratchBufferSize = denoiserMemReqs.withOverlapScratchSizeInBytes;
@@ -127,13 +180,14 @@ int main()
 	assert(status); // No input files at all!
 
 	CUdeviceptr denoiserState;
-	cuMemAlloc(&denoiserState, denoiserStateBufferSize);
+
+	CU_CHECK(cuMemAlloc(&denoiserState, denoiserStateBufferSize));
 
 	CUdeviceptr	imageIntensity;
-	cuMemAlloc(&imageIntensity, sizeof(float));
+	CU_CHECK(cuMemAlloc(&imageIntensity, sizeof(float)));
 
 	CUdeviceptr inputPixelBuffer;
-	cuMemAlloc(&inputPixelBuffer, pixelBufferSize);
+	CU_CHECK(cuMemAlloc(&inputPixelBuffer, pixelBufferSize));
 	CUdeviceptr inputPixelBuffers[3] =
 	{
 		inputPixelBuffer,
@@ -141,34 +195,22 @@ int main()
 		inputPixelBuffer+singleInputBufferSize*2u
 	};
 
-	FILE* outputFile = fopen("output.dds","w");
-	const char* hardcodedInputs[3] =
+	/*
+		Fill CUDA buffers with appropriate texture data
+	*/
+
 	{
-		"",
-		"",
-		""
-	};
-	constexpr uint32_t ddsDataOffset = 69u;
-	for (auto i=0u; i<kInputBufferCount; i++)
-	{
-		auto file = fopen(hardcodedInputs[i],"r");
-		// copy over the header
-		char header[ddsDataOffset];
-		fread(header,1u,ddsDataOffset,file);
-		if (i==0u)
-			fwrite(header,1u,ddsDataOffset,outputFile);
-		// quick and dirty load
+		uint8_t offset = {};
+		for (auto& inputKindTexture : inputKindTextures)
 		{
-			void* tmp = malloc(singleInputBufferSize);
-			fread(tmp,1u,singleInputBufferSize,file);
-			cuMemcpyHtoD_v2(inputPixelBuffers[i],tmp,singleInputBufferSize);
-			free(tmp);
+			void* ptrToBegginingOfData = inputKindTexture.data(0, 0, 0);
+			CU_CHECK(cuMemcpyHtoD_v2(inputPixelBuffers[offset++], ptrToBegginingOfData, singleInputBufferSize));
+			inputKindTexture.clear();
 		}
-		fclose(file);
 	}
 
 	// TODO: denoise
 
-	// TODO: write out the output with fwrite
-	fclose(outputFile);
+	status = gli::save_dds(outputTexture, "outputResult.dds");
+	assert(status); // Could not save output texture!
 }

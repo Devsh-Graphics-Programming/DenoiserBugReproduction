@@ -1,24 +1,33 @@
+# GLI library for DDS inputs
+set(_OLD_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
+set(_OLD_BUILD_STATIC_LIBS ${BUILD_STATIC_LIBS})
+set(_OLD_BUILD_TESTING ${BUILD_TESTING})
+set(BUILD_SHARED_LIBS OFF)
+set(BUILD_STATIC_LIBS OFF)
+set(BUILD_TESTING OFF)
+add_subdirectory(gli gli EXCLUDE_FROM_ALL)
+set(BUILD_SHARED_LIBS ${_OLD_BUILD_SHARED_LIBS})
+set(BUILD_STATIC_LIBS ${_OLD_BUILD_STATIC_LIBS})
+set(BUILD_TESTING ${_OLD_BUILD_TESTING})
+
 set(EXECUTABLE_NAME "denoiserBugReproductionApp")
 
-DBR_adjust_flags() # macro defined in root CMakeLists
-DBR_adjust_definitions() # macro defined in root CMakeLists
-
 set(DBR_EXTERNAL_SOURCES
-	"glad/glad.cpp"
+	
 )
 
 set(DBR_EXTERNAL_HEADERS
-	"glad/glad.h"
-	"glfw/glfw3.h"
-	"glfw/glfw3native.h"
+	"config/BuildConfigOptions.h"
+	"nvidia/CheckMacros.h"
+	"nvidia/MyAssert.h"
 )
 
 set(DBR_SOURCES
-	
+	${DBR_EXTERNAL_SOURCES}
 )
 
 set(DBR_HEADERS
-	
+	${DBR_EXTERNAL_HEADERS}
 )
 
 set(DBR_GLOBAL_SOURCES
@@ -29,11 +38,8 @@ set(DBR_GLOBAL_SOURCES
 
 add_executable(${EXECUTABLE_NAME} ${DBR_GLOBAL_SOURCES})
 
-message("CUDA_CUDA_LIBRARY = " "${CUDA_CUDA_LIBRARY}")
-target_link_libraries(${EXECUTABLE_NAME} ${CUDA_CUDA_LIBRARY})
-
-source_group( "externalSources" FILES ${DBR_EXTERNAL_SOURCES} )
-source_group( "externalHeaders" FILES ${DBR_EXTERNAL_HEADERS} )
+add_dependencies(${EXECUTABLE_NAME} gli)
+target_include_directories(${EXECUTABLE_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/gli)
 
 source_group( "sources" FILES ${DBR_SOURCES} )
 source_group( "headers" FILES ${DBR_HEADERS} )
@@ -64,6 +70,15 @@ set(DBR_GLOBAL_INCLUDE
 target_include_directories(${EXECUTABLE_NAME}
 	PRIVATE ${DBR_GLOBAL_INCLUDE}
 )
-					 
+
+message("CUDA_CUDA_LIBRARY = " "${CUDA_CUDA_LIBRARY}")
 find_package(OpenGL REQUIRED)
-target_link_libraries(${EXECUTABLE_NAME} ${OPENGL_LIBRARIES})
+
+target_link_libraries(${EXECUTABLE_NAME} PUBLIC
+	${CUDA_CUDA_LIBRARY}
+	${OPENGL_LIBRARIES}
+	gli
+)
+
+DBR_adjust_flags() # macro defined in root CMakeLists
+DBR_adjust_definitions() # macro defined in root CMakeLists

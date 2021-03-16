@@ -85,4 +85,6 @@ endmacro()
 find_package(OptiX72 REQUIRED)
 find_package(CUDA 10.0 REQUIRED)
 
-add_subdirectory(src/) # TODO
+set(DBR_ROOT ${CMAKE_SOURCE_DIR})
+configure_file("${CMAKE_SOURCE_DIR}/cmake/config/BuildConfigOptions.h.in" "${CMAKE_SOURCE_DIR}/src/config/BuildConfigOptions.h")
+add_subdirectory(src/)

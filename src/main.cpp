@@ -91,7 +91,7 @@ int main()
 	}
 
 	CUdevice device;
-	CU_CHECK(cuCtxGetDevice(&device)); // it won't work
+	CU_CHECK(cuDeviceGet(&device,0u)); // it won't work
 
 	// create context
 	CUcontext context;
@@ -200,7 +200,7 @@ int main()
 	*/
 
 	{
-		uint8_t offset = {};
+		uint8_t offset = {}; // TODO: because you're declaring to OptiX that data is RGB not RGBA (HALF3) you either need to map the memory of the allocated buffers and write the copy loop yourself, or do it yourself/GLI on the CPU before memcpy to GPU
 		for (auto& inputKindTexture : inputKindTextures)
 		{
 			void* ptrToBegginingOfData = inputKindTexture.data(0, 0, 0);

@@ -14,6 +14,7 @@
 #include <optix.h>
 #include <optix_stubs.h>
 #include <optix_function_table_definition.h>
+#include <optix_denoiser_tiling.h>
 
 #include "gli/gli.hpp"
 
@@ -126,8 +127,8 @@ int main()
 		Creating Denoisers
 	*/
 
-	constexpr auto forcedOptiXFormat = OPTIX_PIXEL_FORMAT_HALF3;
-	constexpr auto forcedOptiXFormatPixelStride = 6u;
+	constexpr auto forcedOptiXFormat = OPTIX_PIXEL_FORMAT_HALF4;
+	constexpr auto forcedOptiXFormatPixelStride = 8u;
 
 	auto createDenoiser = [&](const OptixDenoiserOptions* options, OptixDenoiserModelKind model = OPTIX_DENOISER_MODEL_KIND_HDR, void* modelData = nullptr, size_t modelDataSizeInBytes = 0ull) -> OptixDenoiser
 	{
@@ -148,6 +149,7 @@ int main()
 
 	constexpr uint32_t kInputBufferCount = 3u;
 	OptixDenoiserOptions opts = { OPTIX_DENOISER_INPUT_RGB_ALBEDO_NORMAL };
+
 	OptixDenoiser denoiser = createDenoiser(&opts);
 	if (!denoiser)
 		status = false;
@@ -195,12 +197,15 @@ int main()
 		inputPixelBuffer+singleInputBufferSize*2u
 	};
 
+	CUdeviceptr outputPixelBuffer;
+	CU_CHECK(cuMemAlloc(&outputPixelBuffer, singleInputBufferSize));
+
 	/*
 		Fill CUDA buffers with appropriate texture data
 	*/
 
 	{
-		uint8_t offset = {}; // TODO: because you're declaring to OptiX that data is RGB not RGBA (HALF3) you either need to map the memory of the allocated buffers and write the copy loop yourself, or do it yourself/GLI on the CPU before memcpy to GPU
+		uint8_t offset = {};
 		for (auto& inputKindTexture : inputKindTextures)
 		{
 			void* ptrToBegginingOfData = inputKindTexture.data(0, 0, 0);
@@ -209,7 +214,51 @@ int main()
 		}
 	}
 
-	// TODO: denoise
+	OPTIX_CHECK(optixDenoiserSetup(denoiser, stream, maxResolution[0], maxResolution[1], denoiserState, denoiserStateBufferSize, outputPixelBuffer, singleInputBufferSize));
+
+	OptixImage2D denoiserInputs[3];
+	OptixImage2D denoiserOutput;
+
+	for (size_t k = 0; k < hardcodedInputs.size(); k++)
+	{
+		denoiserInputs[k].data = inputPixelBuffers[k];
+		denoiserInputs[k].width = maxResolution[0];
+		denoiserInputs[k].height = maxResolution[1];
+		denoiserInputs[k].rowStrideInBytes = maxResolution[0] * forcedOptiXFormatPixelStride;
+		denoiserInputs[k].format = forcedOptiXFormat;
+		denoiserInputs[k].pixelStrideInBytes = forcedOptiXFormatPixelStride;
+	}
+
+	denoiserOutput.data = outputPixelBuffer;
+	denoiserOutput.width = maxResolution[0];
+	denoiserOutput.height = maxResolution[1];
+	denoiserOutput.rowStrideInBytes = maxResolution[0] * forcedOptiXFormatPixelStride;
+	denoiserOutput.format = forcedOptiXFormat;
+	denoiserOutput.pixelStrideInBytes = forcedOptiXFormatPixelStride;
+
+	OPTIX_CHECK(optixDenoiserComputeIntensity(denoiser, stream, denoiserInputs, imageIntensity, outputPixelBuffer, singleInputBufferSize));
+
+	OptixDenoiserParams optixDenoiserParams;
+	optixDenoiserParams.blendFactor = 0;
+	optixDenoiserParams.denoiseAlpha = 0;
+	optixDenoiserParams.hdrIntensity = imageIntensity;
+
+	OPTIX_CHECK(optixUtilDenoiserInvokeTiled( // OPTIX_ERROR_INVALID_VALUE
+		denoiser,
+		stream,
+		&optixDenoiserParams,
+		denoiserState,
+		denoiserStateBufferSize,
+		denoiserInputs,
+		hardcodedInputs.size(),
+		&denoiserOutput,
+		outputPixelBuffer,
+		scratchBufferSize,
+		overlap,
+		tileWidth,
+		tileHeight));
+
+	CU_CHECK(cuMemcpyDtoH_v2(outputTexture.data(0, 0, 0), outputPixelBuffer, singleInputBufferSize));
 
 	status = gli::save_dds(outputTexture, "outputResult.dds");
 	assert(status); // Could not save output texture!

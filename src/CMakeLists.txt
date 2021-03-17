@@ -47,15 +47,10 @@ source_group( "headers" FILES ${DBR_HEADERS} )
 set_property(TARGET ${EXECUTABLE_NAME} PROPERTY
              MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 			 
-# Make the build work with either OptiX 7.2.0, 7.1.0 or 7.0.0 releases
 if (OptiX72_FOUND)
   set(OPTIX_INCLUDE_DIR "${OPTIX72_INCLUDE_DIR}")
-elseif(OptiX71_FOUND)
-  set(OPTIX_INCLUDE_DIR "${OPTIX71_INCLUDE_DIR}")
-elseif(OptiX7_FOUND)
-  set(OPTIX_INCLUDE_DIR "${OPTIX7_INCLUDE_DIR}")
 else()
-  message(FATAL_ERROR "No OptiX SDK 7.x found.")
+  message(FATAL_ERROR "No OptiX SDK 7.2 found.")
 endif()			 
 		
 set(DBR_OPTIX_INCLUDE 
@@ -72,11 +67,9 @@ target_include_directories(${EXECUTABLE_NAME}
 )
 
 message("CUDA_CUDA_LIBRARY = " "${CUDA_CUDA_LIBRARY}")
-find_package(OpenGL REQUIRED)
 
 target_link_libraries(${EXECUTABLE_NAME} PUBLIC
 	${CUDA_CUDA_LIBRARY}
-	${OPENGL_LIBRARIES}
 	gli
 )
 

@@ -1,25 +1,20 @@
 cmake_minimum_required(VERSION 3.16)
 
-cmake_policy(SET CMP0072 OLD)
-set(OpenGL_GL_PREFERENCE LEGACY)
-
 project(denoiserBugReproduction LANGUAGES CXX C)
 
 # CUDA test
 include(CheckLanguage)
 check_language(CUDA)
+
 if(NOT CMAKE_CUDA_COMPILER)
 	message(WARNING "CUDA not found.")
 else()
 	enable_language(CUDA)
 endif()
 
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# Cause CUDA is a special snowflake
-set(CMAKE_CUDA_STANDARD 14)
-set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/")
 
@@ -31,7 +26,6 @@ endif()
 
 macro(DBR_adjust_flags)
 	option(DBR_SANITIZE_ADDRESS OFF)
-	option(DBR_GCC_SANITIZE_THREAD OFF)
 
 	if (DBR_SANITIZE_ADDRESS)
 		set(DBR_MSVC_FLAG_SANITIZE_ADDRESS "/fsanitize=address")
@@ -60,18 +54,9 @@ macro(DBR_adjust_flags)
 	
 	#reason for INCREMENTAL:NO: https://docs.microsoft.com/en-us/cpp/build/reference/ltcg-link-time-code-generation?view=vs-2019 /LTCG is not valid for use with /INCREMENTAL.
 	set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} /INCREMENTAL:NO /LTCG:incremental")
-
 endmacro()
 
 macro(DBR_adjust_definitions)
-	add_definitions(
-		-DPNG_THREAD_UNSAFE_OK
-		-DPNG_NO_MMX_CODE
-		-DPNG_NO_MNG_FEATURES
-		-D_7ZIP_ST
-		-DSPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS
-	)
-
 	if(WIN32)
 		add_definitions(
 			-DWIN32

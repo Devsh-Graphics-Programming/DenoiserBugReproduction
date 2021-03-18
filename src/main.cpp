@@ -221,7 +221,7 @@ int main()
 		}
 	}
 
-	OPTIX_CHECK(optixDenoiserSetup(denoiser, stream, outputDimensions[0], outputDimensions[1], denoiserState, denoiserStateBufferSize, scratch, scratchBufferSize));
+	OPTIX_CHECK(optixDenoiserSetup(denoiser, stream, outputDimensions[0]+2u*overlap, outputDimensions[1]+2u*overlap, denoiserState, denoiserStateBufferSize, scratch, scratchBufferSize));
 
 	OptixImage2D denoiserInputs[3];
 	OptixImage2D denoiserOutput;
